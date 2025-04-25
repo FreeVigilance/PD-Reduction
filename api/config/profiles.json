@@ -1,0 +1,38 @@
+{
+    "profiles": [
+      {
+        "profile_id": "demo_profile",
+        "use_regex": true,
+        "use_dictionary": true,
+        "use_language_model": true,
+        "enabled_entity_types": ["PER", "LOC", "PHONE", "EMAIL", "ORG"],
+        "replacement_rules": {
+          "PER": {"type": "template", "template": "[PERSON]"},
+          "LOC": {"type": "template", "template": "[CITY]"},
+          "ORG": {"type": "template", "template": "[ORG]"},
+          "PHONE": {"type": "stars"},
+          "EMAIL": {"type": "stars"}
+        },
+        "custom_entity_prompts": {
+          "PER": "имена, фамилии людей. Например Иван",
+          "LOC": "Город России. Например Москва, Питер",
+          "ORG": "названия организаций. Например Яндекс"
+        },
+        "dictionary_paths": {
+          "cities": {
+            "path": "dictionaries/russian_cities.txt",
+            "entity_type": "LOC",
+            "enabled": true
+          }
+        },
+        "language_model_settings": {
+          "max_input_tokens": 4000,
+          "chunk_overlap_tokens": 1024,
+          "max_new_tokens": 5000,
+          "temperature": 0.8
+        }
+      }
+    ],
+    "default_profile_id": "demo_profile"
+}
+  

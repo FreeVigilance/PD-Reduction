@@ -1,0 +1,157 @@
+{
+    "original_text": "Иван Иванович работает в компании Газпром и проживает в Москве. Его коллега, Анна Петрова, недавно переехала в Санкт-Петербург. \nКонтактные данные сотрудников доступны в корпоративной системе. \nВы можете связаться с Иваном по адресу электронной почты ivan@example.com или по телефону +7 (495) 123-45-67. \nАнна использует почту anna.pet@corp.ru и номер +7 (812) 987-65-43. \nТакже в проекте участвуют представители из Нижнего Новгорода и Казани.\n",
+    "reduced_text": "[PERSON] работает в компании [ORG] и проживает в [CITY] . Его коллега, [PERSON] , недавно переехала в [CITY] . \nКонтактные данные сотрудников доступны в корпоративной системе. \nВы можете связаться с Иваном по адресу электронной почты **************** или по телефону . \nАнна использует почту **************** и номер . \nТакже в проекте участвуют представители из [CITY] и [CITY] .\n",
+    "summary": {
+        "original_length": 444,
+        "reduced_length": 382,
+        "entities_found": 11,
+        "replacements_made": 11
+    },
+    "entities": [
+        {
+            "text": "Иван Иванович",
+            "entity_type": "PER",
+            "start_pos": 0,
+            "end_pos": 13
+        },
+        {
+            "text": "Газпром",
+            "entity_type": "ORG",
+            "start_pos": 34,
+            "end_pos": 41
+        },
+        {
+            "text": "Москве",
+            "entity_type": "LOC",
+            "start_pos": 56,
+            "end_pos": 62
+        },
+        {
+            "text": "Анна Петрова",
+            "entity_type": "PER",
+            "start_pos": 77,
+            "end_pos": 89
+        },
+        {
+            "text": "Санкт-Петербург",
+            "entity_type": "LOC",
+            "start_pos": 111,
+            "end_pos": 126
+        },
+        {
+            "text": "ivan@example.com",
+            "entity_type": "EMAIL",
+            "start_pos": 251,
+            "end_pos": 267
+        },
+        {
+            "text": "+7 (495) 123-45-67",
+            "entity_type": "PHONE",
+            "start_pos": 284,
+            "end_pos": 302
+        },
+        {
+            "text": "anna.pet@corp.ru",
+            "entity_type": "EMAIL",
+            "start_pos": 327,
+            "end_pos": 343
+        },
+        {
+            "text": "+7 (812) 987-65-43",
+            "entity_type": "PHONE",
+            "start_pos": 352,
+            "end_pos": 370
+        },
+        {
+            "text": "Нижнего Новгорода",
+            "entity_type": "LOC",
+            "start_pos": 416,
+            "end_pos": 433
+        },
+        {
+            "text": "Казани",
+            "entity_type": "LOC",
+            "start_pos": 436,
+            "end_pos": 442
+        }
+    ],
+    "replacements": [
+        {
+            "original": "Казани",
+            "replacement": "[CITY]",
+            "entity_type": "LOC",
+            "start_pos": 436,
+            "end_pos": 442
+        },
+        {
+            "original": "Нижнего Новгорода",
+            "replacement": "[CITY]",
+            "entity_type": "LOC",
+            "start_pos": 416,
+            "end_pos": 433
+        },
+        {
+            "original": "+7 (812) 987-65-43",
+            "replacement": "",
+            "entity_type": "PHONE",
+            "start_pos": 352,
+            "end_pos": 370
+        },
+        {
+            "original": "anna.pet@corp.ru",
+            "replacement": "****************",
+            "entity_type": "EMAIL",
+            "start_pos": 327,
+            "end_pos": 343
+        },
+        {
+            "original": "+7 (495) 123-45-67",
+            "replacement": "",
+            "entity_type": "PHONE",
+            "start_pos": 284,
+            "end_pos": 302
+        },
+        {
+            "original": "ivan@example.com",
+            "replacement": "****************",
+            "entity_type": "EMAIL",
+            "start_pos": 251,
+            "end_pos": 267
+        },
+        {
+            "original": "Санкт-Петербург",
+            "replacement": "[CITY]",
+            "entity_type": "LOC",
+            "start_pos": 111,
+            "end_pos": 126
+        },
+        {
+            "original": "Анна Петрова",
+            "replacement": "[PERSON]",
+            "entity_type": "PER",
+            "start_pos": 77,
+            "end_pos": 89
+        },
+        {
+            "original": "Москве",
+            "replacement": "[CITY]",
+            "entity_type": "LOC",
+            "start_pos": 56,
+            "end_pos": 62
+        },
+        {
+            "original": "Газпром",
+            "replacement": "[CITY]",
+            "entity_type": "LOC",
+            "start_pos": 34,
+            "end_pos": 41
+        },
+        {
+            "original": "Иван Иванович",
+            "replacement": "[PERSON]",
+            "entity_type": "PER",
+            "start_pos": 0,
+            "end_pos": 13
+        }
+    ]
+}

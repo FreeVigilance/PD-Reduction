@@ -1,0 +1,245 @@
+body {
+    font-family: sans-serif;
+    margin: 0;
+    padding: 1em;
+    background: #f9f9f9;
+}
+
+.container {
+    max-width: 1000px;
+    margin: auto;
+    background: white;
+    padding: 2em;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.tabs {
+    display: flex;
+    gap: 5px;
+    margin-top: 1em;
+    flex-wrap: wrap;
+}
+
+.tabs button {
+    padding: 6px 12px;
+    cursor: pointer;
+    border: 1px solid #ccc;
+    background: #eee;
+}
+
+.tabs button.active {
+    background: #ddd;
+    font-weight: bold;
+}
+
+.panels .panel {
+    display: none;
+    margin-top: 1em;
+}
+
+.panels .panel.active {
+    display: flex;
+    gap: 1em;
+}
+
+.text-box {
+    flex: 1;
+    height: 400px;
+    overflow-y: scroll;
+    background: #f0f0f0;
+    padding: 1em;
+    white-space: pre-wrap;
+    border: 1px solid #ccc;
+}
+
+textarea.editable {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #fffbe6;
+    resize: none;
+    font-family: monospace;
+}
+:root {
+    --primary-color: #1e293b;
+    --accent-color: #0f172a;
+    --tab-active: #ffffff;
+    --tab-inactive: #e2e8f0;
+    --tab-hover: #cbd5e1;
+    --blue: #2563eb;
+    --blue-hover: #1d4ed8;
+    --gray-bg: #f8fafc;
+    --gray-border: #cbd5e1;
+    --light-text: #475569;
+}
+
+body {
+    font-family: 'Segoe UI', sans-serif;
+    margin: 0;
+    background: var(--gray-bg);
+    color: var(--primary-color);
+}
+
+header {
+    background-color: var(--primary-color);
+    color: white;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 30px;
+    border-radius: 0 0 12px 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+h1 {
+    margin: 0;
+    font-size: 22px;
+}
+
+.controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+select, button, .file-label {
+    padding: 8px 14px;
+    font-size: 14px;
+    border-radius: 8px;
+    border: none;
+    background-color: var(--blue);
+    color: white;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+select {
+    background-color: white;
+    color: var(--primary-color);
+    border: 1px solid var(--blue);
+}
+
+button:hover, .file-label:hover {
+    background-color: var(--blue-hover);
+}
+
+.file-label {
+    background-color: var(--blue);
+}
+
+.task-header {
+    background: #f1f5f9;
+    padding: 14px 30px;
+    font-size: 15px;
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--gray-border);
+    font-weight: 500;
+}
+
+.status {
+    color: var(--light-text);
+}
+
+.tabs {
+    display: flex;
+    padding: 10px 30px 0 30px;
+    gap: 6px;
+    background-color: #f1f5f9;
+    border-bottom: 2px solid var(--gray-border);
+}
+
+.tab {
+    background: var(--tab-inactive);
+    padding: 8px 14px;
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+    color: var(--primary-color);
+    font-weight: 500;
+    transition: background 0.2s ease;
+}
+
+.tab:hover {
+    background: var(--tab-hover);
+}
+
+.tab.active {
+    background: var(--tab-active);
+    border: 1px solid var(--gray-border);
+    border-bottom: none;
+    color: var(--accent-color);
+}
+
+.tab .close {
+    margin-left: 8px;
+    color: #991b1b;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.main-content {
+    display: flex;
+    padding: 30px;
+    gap: 30px;
+    background: white;
+    border-bottom: 1px solid var(--gray-border);
+}
+
+.text-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+pre, textarea {
+    border-radius: 10px;
+    padding: 12px;
+    border: 1px solid var(--gray-border);
+    font-family: monospace;
+    height: 220px;
+    background: #f9fafb;
+    overflow: auto;
+    font-size: 14px;
+    color: var(--accent-color);
+}
+
+textarea {
+    resize: vertical;
+    background: #f0f4f8;
+}
+
+.download-controls {
+    margin-top: 10px;
+    display: flex;
+    gap: 10px;
+}
+
+.download-controls button {
+    background-color: var(--blue);
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: 0.2s ease;
+}
+
+.download-controls button:hover {
+    background-color: var(--blue-hover);
+}
+
+.report {
+    padding: 30px;
+    background: #f8fafc;
+    border-radius: 0 0 12px 12px;
+}
+
+.report h2 {
+    margin-top: 0;
+}
+
+.report ul {
+    padding-left: 18px;
+    color: var(--light-text);
+}
