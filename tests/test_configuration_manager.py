@@ -28,12 +28,22 @@ class TestConfigurationManager(unittest.TestCase):
             use_dictionary=True,
             use_language_model=True
         )
+        self.model_file = tempfile.NamedTemporaryFile(delete=False)
+        self.model_file.close()
+        self.profile_2.llm_settings = {
+            "model_path": self.model_file.name,
+            "max_input_tokens": 2000,
+            "chunk_overlap_tokens": 150,
+            "max_new_tokens": 2000,
+            "temperature": 0.5
+        }
 
         self.tempfile = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
         self.tempfile.close()
 
     def tearDown(self):
         os.remove(self.tempfile.name)
+        os.remove(self.model_file.name)
 
     def test_add_and_get_profile(self):
         manager = ConfigurationManager()

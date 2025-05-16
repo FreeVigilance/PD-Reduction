@@ -63,11 +63,8 @@ class TestDataReplacerIntegrated(unittest.TestCase):
 
     def test_replace_entities_end_to_end(self):
         entities = self.recognizer.detect_entities(self.text, self.profile)
-        print(entities)
         reduced_text, _ = self.replacer.reduce_text(self.text, entities, self.profile)
 
-        print("\n[DEBUG OUTPUT] Финальный текст:")
-        print(reduced_text)
 
         self.assertIn("[PERSON]", reduced_text)
         self.assertIn("*******", reduced_text)

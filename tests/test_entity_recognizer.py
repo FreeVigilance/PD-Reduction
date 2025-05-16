@@ -34,10 +34,6 @@ class TestEntityRecognizer(unittest.TestCase):
         text = "Контакт: test@example.com. Встреча 12/04/2023."
         entities = self.recognizer.detect_entities(text, self.profile)
 
-        print("\n[DEBUG OUTPUT] Найденные сущности:")
-        for entity in entities:
-            print(f"{entity}")
-
         self.assertTrue(any(e.text == "test@example.com" and e.entity_type == "EMAIL" for e in entities))
         self.assertTrue(any(e.text == "12/04/2023" and e.entity_type == "DATE" for e in entities))
 

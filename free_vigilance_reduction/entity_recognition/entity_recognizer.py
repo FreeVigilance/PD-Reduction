@@ -1,5 +1,6 @@
 """
-Модуль для распознавания сущностей с использованием регулярных выражений, словарей и языковой модели.
+Модуль для распознавания сущностей с использованием регулярных выражений,
+словари и языковой модели.
 """
 
 import re
@@ -19,7 +20,15 @@ logger = get_logger(__name__)
 class EntityRecognizer:
     """
     Класс для распознавания сущностей в тексте на основе заданного профиля.
-    Поддерживает регулярные выражения, словари и языковую модель.
+
+    Поддерживает три источника для обнаружения сущностей:
+      - регулярные выражения (regex)
+      - пользовательские словари (dictionary)
+      - языковую модель (LLM)
+
+    Для каждого профиля выполняет последовательное применение включённых
+    методов и объединяет результаты с удалением дублирующих и перекрывающихся
+    сущностей.
     """
 
     def __init__(self, regex_path: str = "config/regex_patterns.json"):
@@ -27,7 +36,7 @@ class EntityRecognizer:
         Инициализация EntityRecognizer.
 
         Args:
-            regex_path (str): Путь к файлу с шаблонами регулярных выражений.
+            regex_path (str): Путь к JSON-файлу с шаблонами регулярных выражений.
         """
         self.dictionary_manager = DictionaryManager()
         self.language_model = LanguageModel()
@@ -38,116 +47,118 @@ class EntityRecognizer:
         Загрузка шаблонов регулярных выражений из JSON-файла.
 
         Args:
-            path (str): Путь к файлу.
+            path (str): Путь к файлу с шаблонами.
 
         Returns:
-            dict: Словарь шаблонов.
+            dict: Словарь {entity_type: regex_pattern}.
         """
-        path = Path(path)
-        if not path.exists():
+        p = Path(path)
+        if not p.exists():
             logger.warning(f"Файл шаблонов не найден: {path}")
             return {}
 
         try:
-            with open(path, 'r', encoding='utf-8') as f:
+            with p.open("r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as exc:
-            logger.error(f"Ошибка при загрузке шаблонов: {exc}")
+            logger.error(f"Ошибка при парсинге шаблонов regex: {exc}")
             return {}
 
-    def detect_entities(self, text: str, profile: ConfigurationProfile) -> List[Entity]:
+    def detect_entities(
+        self,
+        text: str,
+        profile: ConfigurationProfile
+    ) -> List[Entity]:
         """
-        Обнаружение сущностей в тексте на основе профиля.
+        Обнаружение сущностей в тексте согласно профилю.
 
         Args:
-            text (str): Текст для анализа.
+            text (str): Исходный текст для анализа.
             profile (ConfigurationProfile): Профиль конфигурации.
 
         Returns:
-            List[Entity]: Найденные сущности.
+            List[Entity]: Список найденных сущностей без перекрытий.
         """
         entities: List[Entity] = []
 
         if profile.use_dictionary:
-            dictionary_entities = self.dictionary_manager.find_matches(text, profile)
-            logger.info(f"Найдено словарных сущностей: {len(dictionary_entities)}")
-            for entity_now in dictionary_entities:
-                entities.append(entity_now)
+            dict_entities = self.dictionary_manager.find_matches(text, profile)
+            logger.info(f"Найдено словарных сущностей: {len(dict_entities)}")
+            entities.extend(dict_entities)
 
         if profile.use_regex:
             regex_entities = self._apply_regex(text, profile)
-            logger.info(f"Найдено сущностей по регулярным выражениям: {len(regex_entities)}")
-            for entity_now in regex_entities:
-                entities.append(entity_now)
+            logger.info(f"Найдено сущностей по regex: {len(regex_entities)}")
+            entities.extend(regex_entities)
 
         if profile.use_language_model:
             llm_entities = self.language_model.search_entities(text, profile)
-            logger.info(f"Найдено сущностей языковой моделью: {len(llm_entities)}")
-            for entity_now in llm_entities:
-                entities.append(entity_now)
+            logger.info(f"Найдено сущностей LLM: {len(llm_entities)}")
+            entities.extend(llm_entities)
 
-        return self._deduplicate_entities(entities)
+        unique = self._deduplicate_entities(entities)
+        logger.info(f"Всего после дедупликации: {len(unique)}")
+        return unique
 
-    def _apply_regex(self, text: str, profile: ConfigurationProfile) -> List[Entity]:
+    def _apply_regex(
+        self,
+        text: str,
+        profile: ConfigurationProfile
+    ) -> List[Entity]:
         """
         Применение регулярных выражений для поиска сущностей.
 
         Args:
-            text (str): Исходный текст.
-            profile (ConfigurationProfile): Профиль.
+            text (str): Текст для поиска.
+            profile (ConfigurationProfile): Профиль с enabled_entity_types.
 
         Returns:
             List[Entity]: Найденные сущности.
         """
-        entities = []
-
-        for entity_type in profile.entity_types:
-            pattern = self.regex_patterns.get(entity_type)
+        found: List[Entity] = []
+        for etype in profile.entity_types:
+            pattern = self.regex_patterns.get(etype)
             if not pattern:
                 continue
+            for m in re.finditer(pattern, text):
+                ent = Entity(m.group(), etype, m.start(), m.end())
+                found.append(ent)
+        return found
 
-            for match in re.finditer(pattern, text):
-                start, end = match.span()
-                entity_text = match.group()
-                entity_now = Entity(entity_text, entity_type, start, end)
-                entities.append(entity_now)
-
-        return entities
-
-    def _deduplicate_entities(self, entities: List[Entity]) -> List[Entity]:
+    def _deduplicate_entities(
+        self,
+        entities: List[Entity]
+    ) -> List[Entity]:
         """
-        Удаление перекрывающихся сущностей с приоритетом длинных.
+        Удаление перекрывающихся и дублирующихся сущностей.
+
+        Приоритет отдается более длинным сущностям при совпадающих границах.
 
         Args:
-            entities (List[Entity]): Список сущностей.
+            entities (List[Entity]): Сырые найденные сущности.
 
         Returns:
-            List[Entity]: Список без перекрытий.
+            List[Entity]: Фильтрованный список сущностей.
         """
-        sorted_entities = sorted(entities, key=lambda entity_now: (entity_now.start_pos, -entity_now.end_pos))
-        result = []
-
-        for entity_now in sorted_entities:
-            overlap_found = False
-            for existing_entity in result:
-                if self._overlaps(entity_now, existing_entity):
-                    overlap_found = True
-                    break
-            if not overlap_found:
-                result.append(entity_now)
-
+        sorted_ents = sorted(
+            entities,
+            key=lambda e: (e.start_pos, -(e.end_pos - e.start_pos))
+        )
+        result: List[Entity] = []
+        for ent in sorted_ents:
+            if not any(self._overlaps(ent, ex) for ex in result):
+                result.append(ent)
         return result
 
     @staticmethod
-    def _overlaps(entity_now1: Entity, entity_now2: Entity) -> bool:
+    def _overlaps(a: Entity, b: Entity) -> bool:
         """
         Проверка перекрытия двух сущностей.
 
         Args:
-            entity_now1 (Entity)
-            entity_now2 (Entity)
+            a (Entity), b (Entity)
 
         Returns:
-            bool: True, если перекрываются.
+            bool: True, если сущности перекрываются.
         """
-        return not (entity_now1.end_pos <= entity_now2.start_pos or entity_now1.start_pos >= entity_now2.end_pos)
+        return not (a.end_pos <= b.start_pos or a.start_pos >= b.end_pos)

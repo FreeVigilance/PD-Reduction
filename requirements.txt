@@ -6,10 +6,15 @@ pydantic>=2.0
 regex>=2023.12.25
 python-docx>=1.1.0
 PyMuPDF>=1.23.0
+PyPDF2>=3.0.0
 reportlab>=4.0.0
 
 transformers>=4.39.0
 torch>=2.2.0
+
+spacy>=3.6.0 # python -m spacy download ru_core_news_sm
+
+rapidfuzz>=2.14.0
 
 pytest>=7.4.0
 

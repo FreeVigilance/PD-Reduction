@@ -1,5 +1,3 @@
-# api/routes/profiles.py
-
 from fastapi import APIRouter, Depends, HTTPException
 from api.dependencies import get_engine
 from free_vigilance_reduction.core import FreeVigilanceReduction

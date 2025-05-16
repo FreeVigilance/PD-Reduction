@@ -1,12 +1,20 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <title>FreeVigilanceReduction — Client</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.3.0/docx.umd.min.js"></script>
+  <meta charset="UTF-8">
+  <title>FreeVigilanceReduction — Client</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.13.216/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.13.216/pdf.worker.min.js";
+  </script>
+
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script defer src="https://unpkg.com/docx@8.3.0/build/index.umd.js"></script>
+
+  <script defer src="{{ url_for('static', filename='main.js') }}"></script>
 </head>
 <body>
     <header>
@@ -27,12 +35,7 @@
         </div>
     </header>
 
-    <section class="tabs" id="tabs-container">
-    </section>
-
-    <div id="tab-contents">
-    </div>
-
-    <script src="{{ url_for('static', filename='main.js') }}"></script>
+    <section class="tabs" id="tabs-container"></section>
+    <div id="tab-contents"></div>
 </body>
 </html>

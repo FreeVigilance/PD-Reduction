@@ -1,4 +1,15 @@
-from huggingface_hub import snapshot_download
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import os
 
-snapshot_download(repo_id="Vikhrmodels/Vikhr-Gemma-2B-instruct", 
-                  local_dir="models/vikhr-gemma-2b-instruct")
+model_name = "Vikhrmodels/Vikhr-Gemma-2B-instruct"
+model_path = os.path.expanduser("~/models/Vikhr-Gemma-2B-instruct")
+
+os.makedirs(model_path, exist_ok=True)
+
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(model_name)
+
+tokenizer.save_pretrained(model_path)
+model.save_pretrained(model_path)
+
+print(f"Модель и токенизатор сохранены в {model_path}")

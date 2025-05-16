@@ -1,5 +1,3 @@
-# api/tests/test_download.py
-
 import os
 import tempfile
 import shutil

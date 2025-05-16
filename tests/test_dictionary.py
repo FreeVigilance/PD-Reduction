@@ -27,21 +27,23 @@ class TestDictionary(unittest.TestCase):
         self.assertEqual(matches[0].text, "Петр Петров")
 
     def test_load_from_file(self):
-        with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.txt') as temp_file:
-            temp_file.write("# Комментарий\n")
-            temp_file.write("Иван Иванович\n")
-            temp_file.write("\n")
-            temp_file.write("Мария Петровна\n")
-            temp_path = temp_file.name
+        fd, temp_path = tempfile.mkstemp(suffix=".txt")
+        os.close(fd)
+        with open(temp_path, "w", encoding="utf-8") as f:
+            f.write("# Комментарий\n")
+            f.write("Иван Иванович\n")
+            f.write("\n")
+            f.write("Мария Петровна\n")
 
-        test_dict = Dictionary("PER")
-        test_dict.load_from_file(temp_path)
-        matches = test_dict.find_matches("Там была Иван Иванович и Мария Петровна.")
-
-        os.remove(temp_path)
-        self.assertEqual(len(matches), 2)
-        self.assertEqual(matches[0].text, "Иван Иванович")
-        self.assertEqual(matches[1].text, "Мария Петровна")
+        try:
+            test_dict = Dictionary("PER")
+            test_dict.load_from_file(temp_path)
+            matches = test_dict.find_matches("Там была Иван Иванович и Мария Петровна.")
+            self.assertEqual(len(matches), 2)
+            self.assertEqual(matches[0].text, "Иван Иванович")
+            self.assertEqual(matches[1].text, "Мария Петровна")
+        finally:
+            os.remove(temp_path)
 
 
 if __name__ == '__main__':

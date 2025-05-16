@@ -1,245 +1,340 @@
 document.addEventListener("DOMContentLoaded", () => {
-    const profileSelect = document.getElementById("profile-select");
-    const fileInput = document.getElementById("file-input");
-    const uploadBtn = document.getElementById("upload-btn");
-    const tabsContainer = document.getElementById("tabs-container");
+    const profileSelect     = document.getElementById("profile-select");
+    const fileInput         = document.getElementById("file-input");
+    const uploadBtn         = document.getElementById("upload-btn");
+    const tabsContainer     = document.getElementById("tabs-container");
     const contentsContainer = document.getElementById("tab-contents");
-
-    const savedTaskIds = JSON.parse(localStorage.getItem("task_ids") || "[]");
-    savedTaskIds.forEach(taskId => {
-        createTab(taskId);
-        pollStatus(taskId);
-    });
-
-    uploadBtn.addEventListener("click", async () => {
-        const files = fileInput.files;
-        const profileId = profileSelect.value;
-
-        if (!profileId || files.length === 0) {
-            alert("Выберите профиль и хотя бы один файл");
-            return;
-        }
-
-        const formData = new FormData();
-        formData.append("profile_id", profileId);
-        for (const file of files) {
-            formData.append("files", file);
-        }
-
+  
+    const docxLib = window.docx || window.Docx;
+    if (!docxLib || !docxLib.Packer) {
+      console.error("Docx.js не найден! Проверьте порядок <script>.");
+    }
+  
+    const pdfjsLib = window.pdfjsLib;
+    if (!pdfjsLib) {
+      console.error("PDF.js не найден!");
+    }
+  
+    let savedTaskIds   = JSON.parse(localStorage.getItem("task_ids")    || "[]");
+    const tabNames     = JSON.parse(localStorage.getItem("tab_names")   || "{}");
+    const editedTexts  = JSON.parse(localStorage.getItem("edited_texts")|| "{}");
+  
+    function persistState() {
+      localStorage.setItem("task_ids",     JSON.stringify(savedTaskIds));
+      localStorage.setItem("tab_names",    JSON.stringify(tabNames));
+      localStorage.setItem("edited_texts", JSON.stringify(editedTexts));
+    }
+  
+    // ======== Вернуть вкладки ========
+    (async function restoreTabs() {
+      const goodIds = [];
+      for (const taskId of savedTaskIds) {
         try {
-            console.log("[UPLOAD] Отправка запроса на /upload...");
-            const resp = await fetch("/upload", {
-                method: "POST",
-                body: formData
-            });
-
-            if (!resp.ok) {
-                const text = await resp.text();
-                throw new Error(text);
-            }
-
-            const data = await resp.json();
-            const taskId = data.task_id;
-            console.log("[UPLOAD] Получен task_id:", taskId);
-
-            createTab(taskId);
+          const resp = await fetch(`/status/${taskId}`);
+          if (resp.ok) {
+            goodIds.push(taskId);
+            createTabPlaceholder(taskId, goodIds.length - 1);
             pollStatus(taskId);
-
-            const updatedIds = [...new Set([...savedTaskIds, taskId])];
-            localStorage.setItem("task_ids", JSON.stringify(updatedIds));
-        } catch (err) {
-            console.error("[UPLOAD] Ошибка:", err.message);
-            alert("Ошибка отправки: " + err.message);
+          }
+        } catch {}
+      }
+      savedTaskIds = goodIds;
+      persistState();
+    })();
+  
+    // ======== Upload ========
+    uploadBtn.addEventListener("click", async () => {
+      const files     = Array.from(fileInput.files);
+      const profileId = profileSelect.value;
+      if (!profileId || !files.length) {
+        alert("Выберите профиль и хотя бы один файл");
+        return;
+      }
+  
+      const prepared = await Promise.all(files.map(async f => {
+        const ext = f.name.split(".").pop().toLowerCase();
+        if (ext === "pdf") {
+          const ab  = await f.arrayBuffer();
+          const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
+          let txt   = "";
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page    = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            txt += content.items.map(it => it.str).join(" ") + "\n\n";
+          }
+          return new File([txt], f.name.replace(/\.pdf$/i, ".txt"), { type: "text/plain" });
         }
+        return f;
+      }));
+  
+      const fd = new FormData();
+      fd.append("profile_id", profileId);
+      prepared.forEach(f => fd.append("files", f));
+  
+      try {
+        const resp = await fetch("/upload", { method: "POST", body: fd });
+        if (!resp.ok) throw new Error("Некорректный файл");
+        const { task_id: taskId } = await resp.json();
+  
+        if (!savedTaskIds.includes(taskId)) {
+          savedTaskIds.push(taskId);
+          tabNames[taskId] = `Задача ${savedTaskIds.length}`;
+          persistState();
+          createTabPlaceholder(taskId, savedTaskIds.length - 1);
+          pollStatus(taskId);
+        }
+      } catch (err) {
+        console.error("[UPLOAD]", err);
+        alert("Ошибка отправки: " + err.message);
+      }
     });
-
-    function createTab(taskId) {
-        if (document.getElementById("tab-" + taskId)) return;
-
-        const tab = document.createElement("div");
-        tab.className = "tab";
-        tab.id = "tab-" + taskId;
-        tab.textContent = `Задача #${taskId}`;
-        tab.dataset.taskId = taskId;
-
-        const closeBtn = document.createElement("span");
-        closeBtn.textContent = "×";
-        closeBtn.className = "close";
-        closeBtn.onclick = () => {
-            tabsContainer.removeChild(tab);
-            contentsContainer.removeChild(document.getElementById("content-" + taskId));
-
-            const newList = JSON.parse(localStorage.getItem("task_ids") || "[]").filter(id => id !== taskId);
-            localStorage.setItem("task_ids", JSON.stringify(newList));
+  
+    // ======== Создание вкладки ========
+    function createTabPlaceholder(taskId, idx = 0) {
+      if (document.getElementById("tab-" + taskId)) return;
+      const tab = document.createElement("div");
+      tab.className      = "tab";
+      tab.id             = "tab-" + taskId;
+      tab.dataset.taskId = taskId;
+  
+      const label = document.createElement("span");
+      label.className   = "tab-label";
+      label.textContent = tabNames[taskId] || `Задача ${idx+1}`;
+      tab.appendChild(label);
+  
+      const closeBtn = document.createElement("span");
+      closeBtn.className   = "close";
+      closeBtn.textContent = "×";
+      closeBtn.onclick     = () => {
+        tab.remove();
+        document.getElementById("content-" + taskId)?.remove();
+        savedTaskIds = savedTaskIds.filter(id => id !== taskId);
+        delete tabNames[taskId];
+        delete editedTexts[taskId];
+        persistState();
+      };
+      tab.appendChild(closeBtn);
+  
+      label.ondblclick = () => {
+        const inp = document.createElement("input");
+        inp.type  = "text";
+        inp.value = label.textContent;
+        tab.replaceChild(inp, label);
+        inp.focus();
+        inp.onblur = () => {
+          const v = inp.value.trim() || label.textContent;
+          tabNames[taskId] = v;
+          label.textContent = v;
+          tab.replaceChild(label, inp);
+          persistState();
         };
-        tab.appendChild(closeBtn);
-
-        tab.onclick = () => {
-            document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-            document.querySelectorAll(".tab-content").forEach(c => c.style.display = "none");
-
-            tab.classList.add("active");
-            document.getElementById("content-" + taskId).style.display = "block";
-        };
-
-        tabsContainer.appendChild(tab);
-
-        const content = document.createElement("div");
-        content.className = "tab-content";
-        content.id = "content-" + taskId;
-
-        content.innerHTML = `
-            <section class="task-header">
-                <span><strong>📂 Задача #${taskId}</strong></span>
-                <span class="status">Статус: <span class="task-status">Ожидание...</span></span>
-
-                <label>Формат:</label>
-                <select class="download-format">
-                    <option value="txt">TXT</option>
-                    <option value="pdf">PDF</option>
-                    <option value="docx">DOCX</option>
-                </select>
-
-                <button class="download-zip" data-task-id="${taskId}">Скачать ZIP</button>
-                <button class="download-single">Скачать файл</button>
-            </section>
-            <section class="main-content">
-                <div class="text-column">
-                    <h2>Оригинал</h2>
-                    <textarea class="original-text" readonly>Загрузка...</textarea>
-                </div>
-                <div class="text-column">
-                    <h2>Редактировано</h2>
-                    <textarea class="redacted-text">Загрузка...</textarea>
-                </div>
-            </section>
-            <section class="report">
-                <h2>Отчёт</h2>
-                <pre class="report-content">Ожидание результата...</pre>
-            </section>
-        `;
-
-        content.style.display = "none";
-        contentsContainer.appendChild(content);
-        tab.click();
+      };
+  
+      tab.onclick = () => {
+        document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+        document.querySelectorAll(".tab-content").forEach(c => c.style.display = "none");
+        tab.classList.add("active");
+        document.getElementById("content-" + taskId).style.display = "block";
+      };
+      tabsContainer.appendChild(tab);
+  
+      const ct = document.createElement("div");
+      ct.className    = "tab-content";
+      ct.id           = "content-" + taskId;
+      ct.style.display = "none";
+      ct.innerHTML    = `
+        <section class="task-header">
+          <strong>${label.textContent}</strong>
+          <span class="status">Статус: <span class="task-status">Ожидание...</span></span>
+        </section>
+        <section class="main-content">
+          <div class="text-column"><h2>Оригинал</h2><textarea class="original-text" readonly>—</textarea></div>
+          <div class="text-column"><h2>Редактировано</h2><textarea class="redacted-text">—</textarea></div>
+        </section>
+        <section class="report"><h2>Отчёт</h2><pre class="report-content">—</pre></section>
+      `;
+      contentsContainer.appendChild(ct);
     }
-
+  
+    // ======== Статусы ========
     function pollStatus(taskId) {
-        const statusText = () => document.querySelector(`#content-${taskId} .task-status`);
-
-        const interval = setInterval(async () => {
-            try {
-                const resp = await fetch(`/status/${taskId}`);
-                const data = await resp.json();
-
-                console.log(`[STATUS] Задача ${taskId}:`, data.status);
-                statusText().textContent = data.status;
-
-                if (data.status === "completed") {
-                    clearInterval(interval);
-                    loadResults(taskId);
-                }
-            } catch (error) {
-                console.error("[STATUS] Ошибка получения статуса:", error);
-            }
-        }, 3000);
-    }
-
-    async function loadResults(taskId) {
-        console.log(`[LOAD] Загружаем результат для ${taskId}`);
-        const content = document.getElementById("content-" + taskId);
-
+      const iv = setInterval(async () => {
         try {
-            const resp = await fetch(`/results/${taskId}`);
-            const text = await resp.text();
-            console.log(`[LOAD] Ответ от /results/${taskId}:`, text);
-
-            let data;
-            try {
-                data = JSON.parse(text);
-            } catch (parseError) {
-                console.error("[LOAD] Ошибка парсинга JSON:", parseError);
-                content.querySelector(".original-text").textContent = "Ошибка разбора ответа";
-                return;
-            }
-
-            const report = data.reports?.[0];
-            if (!report || !report.report) {
-                console.warn(`[LOAD] Пустой или некорректный отчёт для ${taskId}`);
-                content.querySelector(".original-text").textContent = "Ошибка: пустой отчёт";
-                content.querySelector(".redacted-text").value = "Ошибка загрузки";
-                content.querySelector(".report-content").textContent = "Пустой результат";
-                return;
-            }
-
-            const filename = report.file || `Задача #${taskId}`;
-            const tabElem = document.getElementById("tab-" + taskId);
-            if (tabElem) tabElem.firstChild.textContent = filename + " ";
-
-            content.querySelector(".original-text").textContent = report.report.original_text || "—";
-            content.querySelector(".redacted-text").value = report.report.reduced_text || "—";
-
-            const replacements = report.report.replacements || [];
-            const reportBlock = content.querySelector(".report-content");
-            if (replacements.length > 0) {
-                reportBlock.textContent = replacements
-                    .map(r => `${r.entity_type}: ${r.original} → ${r.replacement}`)
-                    .join("\n");
-            } else {
-                reportBlock.textContent = "Нет замен";
-            }
-
-            content.querySelector(".download-zip").onclick = () => {
-                window.location.href = `/download/${taskId}`;
-            };
-
-            content.querySelector(".download-single").onclick = () => {
-                const redactedText = content.querySelector(".redacted-text").value;
-                const formatSelector = content.querySelector(".download-format");
-                if (!formatSelector) {
-                    alert("Не выбран формат для скачивания.");
-                    return;
-                }
-
-                const format = formatSelector.value;
-                const filenameBase = filename.replace(/\.[^/.]+$/, "");
-
-                if (format === "txt") {
-                    const blob = new Blob([redactedText], { type: "text/plain;charset=utf-8" });
-                    triggerDownload(blob, `${filenameBase}.txt`);
-                } else if (format === "pdf") {
-                    const pdf = new window.jspdf.jsPDF();
-                    pdf.setFont("Courier");
-                    pdf.setFontSize(12);
-                    const lines = pdf.splitTextToSize(redactedText, 180);
-                    pdf.text(lines, 10, 10);
-                    pdf.save(`${filenameBase}.pdf`);
-                } else if (format === "docx") {
-                    const doc = new window.docx.Document({
-                        sections: [{
-                            children: [new window.docx.Paragraph(redactedText)],
-                        }],
-                    });
-                    window.docx.Packer.toBlob(doc).then(blob => {
-                        triggerDownload(blob, `${filenameBase}.docx`);
-                    });
-                }
-            };
-
-            function triggerDownload(blob, filename) {
-                const link = document.createElement("a");
-                link.href = URL.createObjectURL(blob);
-                link.download = filename;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            }
-
-        } catch (error) {
-            console.error("[LOAD] Ошибка при обработке результатов:", error);
-            content.querySelector(".original-text").textContent = "Ошибка загрузки";
-            content.querySelector(".redacted-text").value = "Ошибка загрузки";
-            content.querySelector(".report-content").textContent = "Ошибка загрузки отчёта";
+          const resp = await fetch(`/status/${taskId}`);
+          if (!resp.ok) {
+            clearInterval(iv);
+            document.getElementById("tab-"+taskId)?.remove();
+            document.getElementById("content-"+taskId)?.remove();
+            savedTaskIds = savedTaskIds.filter(id => id !== taskId);
+            persistState();
+            return;
+          }
+          const { status } = await resp.json();
+          const stEl = document.querySelector(`#content-${taskId} .task-status`);
+          if (stEl) stEl.textContent = status;
+          if (status === "completed") {
+            clearInterval(iv);
+            loadResults(taskId);
+          }
+        } catch(e) {
+          console.error(e);
+          clearInterval(iv);
         }
+      }, 2000);
     }
-});
+  
+    // ======== Загружаем обработанные файлы ========
+    async function loadResults(taskId) {
+      const { reports } = await (await fetch(`/results/${taskId}`)).json();
+  
+      document.getElementById("tab-"+taskId)?.remove();
+      document.getElementById("content-"+taskId)?.remove();
+  
+      reports.forEach((entry, idx) => {
+        const subId = `${taskId}_${idx}`;
+        if (!tabNames[subId]) {
+          tabNames[subId] = `Задача ${idx+1}`;
+        }
+        createFileTab(subId, entry.report);
+      });
+  
+      persistState();
+  
+      const first = `${taskId}_0`;
+      document.getElementById("tab-"+first)?.click();
+    }
+  
+    // ======== Вкладки и сделанные файлы ========
+    function createFileTab(tabId, report) {
+      if (document.getElementById("tab-"+tabId)) return;
+  
+      const tab = document.createElement("div");
+      tab.className = "tab";
+      tab.id        = "tab-"+tabId;
+  
+      const lbl = document.createElement("span");
+      lbl.className   = "tab-label";
+      lbl.textContent = tabNames[tabId];
+      tab.appendChild(lbl);
+  
+      const cls = document.createElement("span");
+      cls.className   = "close";
+      cls.textContent = "×";
+      cls.onclick     = () => {
+        tab.remove();
+        document.getElementById("content-"+tabId)?.remove();
+        delete tabNames[tabId];
+        delete editedTexts[tabId];
+        persistState();
+      };
+      tab.appendChild(cls);
+  
+      lbl.ondblclick = () => {
+        const inp = document.createElement("input");
+        inp.type  = "text";
+        inp.value = lbl.textContent;
+        tab.replaceChild(inp, lbl);
+        inp.focus();
+        inp.onblur = () => {
+          const v = inp.value.trim() || lbl.textContent;
+          tabNames[tabId] = v;
+          lbl.textContent = v;
+          tab.replaceChild(lbl, inp);
+          persistState();
+        };
+      };
+  
+      tab.onclick = () => {
+        document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+        document.querySelectorAll(".tab-content").forEach(c=>c.style.display="none");
+        tab.classList.add("active");
+        document.getElementById("content-"+tabId).style.display = "block";
+      };
+      tabsContainer.appendChild(tab);
+  
+      const ct = document.createElement("div");
+      ct.className    = "tab-content";
+      ct.id           = "content-"+tabId;
+      ct.style.display = "none";
+      ct.innerHTML    = `
+        <section class="task-header">
+          <strong>${lbl.textContent}</strong>
+          <span class="status">Статус: <span class="task-status">completed</span></span>
+          <label>Формат:</label>
+          <select class="download-format">
+            <option value="txt">TXT</option>
+            <option value="pdf">PDF</option>
+            <option value="docx">DOCX</option>
+          </select>
+          <button class="download-zip">Скачать ZIP</button>
+          <button class="download-single">Скачать файл</button>
+        </section>
+        <section class="main-content">
+          <div class="text-column">
+            <h2>Оригинал</h2>
+            <textarea class="original-text" readonly></textarea>
+          </div>
+          <div class="text-column">
+            <h2>Редактировано</h2>
+            <textarea class="redacted-text"></textarea>
+          </div>
+        </section>
+        <section class="report">
+          <h2>Отчёт</h2>
+          <pre class="report-content"></pre>
+        </section>
+      `;
+      contentsContainer.appendChild(ct);
+  
+      const pane = ct;
+      pane.querySelector(".original-text").value = report.original_text || "";
+      const rt = pane.querySelector(".redacted-text");
+      rt.value = editedTexts[tabId] ?? report.reduced_text ?? "";
+      rt.oninput = e => {
+        editedTexts[tabId] = e.target.value;
+        persistState();
+      };
+      const reps = report.replacements || [];
+      pane.querySelector(".report-content").textContent = 
+        reps.length
+          ? reps.map(r=>`${r.entity_type}: ${r.original} → ${r.replacement}`).join("\n")
+          : "Нет замен";
+  
+      pane.querySelector(".download-zip").onclick = () => {
+        const batch = tabId.split("_")[0];
+        window.location.href = `/download/${batch}`;
+      };
+  
+      pane.querySelector(".download-single").onclick = () => {
+        const fmt  = pane.querySelector(".download-format").value;
+        const txt  = rt.value;
+        const name = lbl.textContent;
+        if (fmt === "txt") return downloadBlob(new Blob([txt],{type:"text/plain"}), name+".txt");
+        if (fmt === "pdf") {
+          const pdf = new window.jspdf.jsPDF();
+          pdf.setFont("Courier"); pdf.setFontSize(12);
+          pdf.text(pdf.splitTextToSize(txt,180),10,10);
+          return downloadBlob(pdf.output("blob"), name+".pdf");
+        }
+        if (fmt === "docx") {
+          const { Document,Packer,Paragraph } = docxLib;
+          const doc = new Document({ sections:[{ children:[new Paragraph(txt)] }] });
+          return Packer.toBlob(doc).then(b=>downloadBlob(b,name+".docx"));
+        }
+      };
+    }
+  
+    function downloadBlob(blobOrUrl, filename) {
+      const url = typeof blobOrUrl === "string"
+        ? blobOrUrl
+        : URL.createObjectURL(blobOrUrl);
+      const a = document.createElement("a");
+      a.href    = url;
+      a.download= filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      if (typeof blobOrUrl !== "string") URL.revokeObjectURL(url);
+    }
+  });
+  

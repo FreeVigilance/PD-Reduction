@@ -9,22 +9,22 @@ class TestDictionaryManager(unittest.TestCase):
     def setUp(self):
         self.manager = DictionaryManager()
 
-        self.temp_file = tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.txt')
-        self.temp_file.write("Иван Иванович\nИванов Михаил\n")
-        self.temp_file.close()
+        fd, self.temp_path = tempfile.mkstemp(suffix=".txt", text=True)
+        os.close(fd)
+        with open(self.temp_path, "w", encoding="utf-8") as f:
+            f.write("Иван Иванович\nИванов Михаил\n")
 
-        self.manager.load_dictionary("test_dict", self.temp_file.name, "PER")
-
+        self.manager.load_dictionary("test_dict", self.temp_path, "PER")
         self.profile = ConfigurationProfile(
             profile_id="test",
             entity_types=["PER"],
         )
         self.profile.dictionary_settings = {
-            "test_dict": {"enabled": True, "path": self.temp_file.name}
+            "test_dict": {"enabled": True, "path": self.temp_path}
         }
 
     def tearDown(self):
-        os.remove(self.temp_file.name)
+        os.remove(self.temp_path)
 
     def test_get_dictionary(self):
         dictionary = self.manager.get_dictionary("test_dict")

@@ -1,5 +1,3 @@
-# api/tests/test_profiles.py
-
 import pytest
 from fastapi.testclient import TestClient
 from api.main import app

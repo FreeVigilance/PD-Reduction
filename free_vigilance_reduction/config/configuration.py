@@ -5,7 +5,7 @@
 import os
 import json
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from ..utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -14,19 +14,35 @@ logger = get_logger(__name__)
 class ConfigurationProfile:
     """
     Профиль конфигурации для анонимизации текста.
+
+    Хранит все параметры обработки:
+      - Разрешенные типы сущностей
+      - Правила замены
+      - Пути к пользовательским словарям
+      - Промпты для LLM
+      - Флаги включения механизмов (regex, словарь, LLM)
+      - Настройки языковой модели (llm_settings)
+
+    llm_settings должен содержать ключи:
+      - model_path (str): путь к локальной папке или файлу модели
+      - device (str): 'cpu' или 'cuda'/'cuda:0'
+      - max_input_tokens (int): максимальное число входных токенов
+      - chunk_overlap_tokens (int): число токенов перекрытия при разбиении
+      - max_new_tokens (int): максимальное число генерируемых токенов
+      - temperature (float): параметр температуры при генерации
     """
 
     def __init__(
         self,
         profile_id: str,
         entity_types: Optional[List[str]] = None,
-        replacement_rules: Optional[Dict[str, str]] = None,
-        dictionary_paths: Optional[Dict[str, str]] = None,
+        replacement_rules: Optional[Dict[str, Any]] = None,
+        dictionary_paths: Optional[Dict[str, Any]] = None,
         custom_entity_prompts: Optional[Dict[str, str]] = None,
         use_regex: bool = True,
         use_dictionary: bool = True,
         use_language_model: bool = True,
-        llm_settings=None
+        llm_settings: Optional[Dict[str, Any]] = None
     ):
         """
         Инициализация профиля конфигурации.
@@ -34,13 +50,13 @@ class ConfigurationProfile:
         Args:
             profile_id (str): Уникальный идентификатор профиля.
             entity_types (List[str], optional): Список типов сущностей.
-            replacement_rules (Dict[str, str], optional): Правила замены по типу.
-            dictionary_paths (Dict[str, str], optional): Пути к словарям.
+            replacement_rules (Dict[str, Any], optional): Правила замены по типу.
+            dictionary_paths (Dict[str, Any], optional): Пути к словарям.
             custom_entity_prompts (Dict[str, str], optional): Промпты для LLM.
             use_regex (bool): Включить ли поиск по regex.
-            use_dictionary (bool): Включить ли словари.
+            use_dictionary (bool): Включить ли поиск по словарю.
             use_language_model (bool): Включить ли LLM.
-            llm_settings: Настройки языковой модели.
+            llm_settings (Dict[str, Any], optional): Настройки языковой модели.
         """
         self.profile_id = profile_id
         self.entity_types = entity_types or []
@@ -51,19 +67,25 @@ class ConfigurationProfile:
         self.use_regex = use_regex
         self.use_dictionary = use_dictionary
         self.use_language_model = use_language_model
-        self.llm_settings = llm_settings or {}
+        self.llm_settings = llm_settings.copy() if llm_settings else {}
+        self.llm_settings.setdefault("model_path", "")
+        self.llm_settings.setdefault("device", "cpu")
+        self.llm_settings.setdefault("max_input_tokens", 512)
+        self.llm_settings.setdefault("chunk_overlap_tokens", 0)
+        self.llm_settings.setdefault("max_new_tokens", 256)
+        self.llm_settings.setdefault("temperature", 0.5)
 
         self.created_at = None
         self.updated_at = None
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> Dict[str, Any]:
         """
-        Преобразует профиль в словарь.
+        Преобразует профиль в словарь для сериализации.
 
         Returns:
             dict: Словарь со всеми настройками.
         """
-        profile_dict = {
+        return {
             "profile_id": self.profile_id,
             "enabled_entity_types": self.entity_types,
             "replacement_rules": self.replacement_rules,
@@ -76,41 +98,40 @@ class ConfigurationProfile:
             "created_at": self.created_at,
             "updated_at": self.updated_at
         }
-        return profile_dict
 
     def save_to_file(self, file_path: str) -> None:
         """
         Сохраняет профиль в файл JSON.
 
         Args:
-            file_path (str): Путь к файлу.
+            file_path (str): Путь к выходному JSON-файлу.
         """
         self.updated_at = self._current_timestamp()
         if self.created_at is None:
             self.created_at = self.updated_at
 
-        profile_path_now = Path(file_path)
-        if not profile_path_now.parent.exists():
-            profile_path_now.parent.mkdir(parents=True)
+        path = Path(file_path)
+        if not path.parent.exists():
+            path.parent.mkdir(parents=True)
 
-        with open(profile_path_now, 'w', encoding='utf-8') as file_now:
-            json.dump(self.to_dict(), file_now, ensure_ascii=False, indent=4)
+        with open(path, 'w', encoding='utf-8') as fp:
+            json.dump(self.to_dict(), fp, ensure_ascii=False, indent=4)
 
-        logger.info(f"Профиль конфигурации сохранён в {file_path}")
+        logger.info(f"Профиль конфигурации '{self.profile_id}' сохранён в {file_path}")
 
     @staticmethod
-    def from_dict(data: Dict) -> "ConfigurationProfile":
+    def from_dict(data: Dict[str, Any]) -> "ConfigurationProfile":
         """
-        Создание профиля из словаря.
+        Создание профиля из словаря, загруженного из JSON.
 
         Args:
             data (dict): Словарь с данными профиля.
 
         Returns:
-            ConfigurationProfile: Загруженный профиль.
+            ConfigurationProfile: Инстанс профиля.
         """
-        return ConfigurationProfile(
-            profile_id=data["profile_id"],
+        profile = ConfigurationProfile(
+            profile_id=data.get("profile_id", ""),
             entity_types=data.get("enabled_entity_types", []),
             replacement_rules=data.get("replacement_rules", {}),
             dictionary_paths=data.get("dictionary_paths", {}),
@@ -120,59 +141,72 @@ class ConfigurationProfile:
             use_language_model=data.get("use_language_model", True),
             llm_settings=data.get("llm_settings", {})
         )
+        profile.created_at = data.get("created_at")
+        profile.updated_at = data.get("updated_at")
+        return profile
 
     @staticmethod
     def from_file(file_path: str) -> "ConfigurationProfile":
         """
-        Загрузка профиля из файла.
+        Загрузка одного профиля из JSON-файла.
 
         Args:
-            file_path (str): Путь к JSON-файлу.
+            file_path (str): Путь к файлу.
 
         Returns:
             ConfigurationProfile: Загруженный профиль.
         """
-        path_now = Path(file_path)
-        if not path_now.exists():
+        path = Path(file_path)
+        if not path.exists():
             logger.error(f"Файл профиля не найден: {file_path}")
             raise FileNotFoundError(f"Файл профиля не найден: {file_path}")
 
-        with open(path_now, 'r', encoding='utf-8') as file_now:
-            data_now = json.load(file_now)
+        with open(path, 'r', encoding='utf-8') as fp:
+            data = json.load(fp)
 
-        profile_now = ConfigurationProfile.from_dict(data_now)
-        profile_now.created_at = data_now.get("created_at")
-        profile_now.updated_at = data_now.get("updated_at")
-        return profile_now
+        return ConfigurationProfile.from_dict(data)
 
     def validate(self) -> None:
         """
-        Проверяет наличие правил замены для всех включённых сущностей.
-
-        Raises:
-            ValueError: Если отсутствует правило замены.
+        Проверяет целостность профиля:
+         - Наличие правил замены для всех типов сущностей
+         - Корректность LLM-настроек (непустой model_path и неотрицательные токены)
         """
-        missing_now = []
-        for entity_type_now in self.entity_types:
-            if entity_type_now not in self.replacement_rules:
-                missing_now.append(entity_type_now)
+        missing = [t for t in self.entity_types if t not in self.replacement_rules]
+        if missing:
+            msg = f"Отсутствуют правила замены для сущностей: {', '.join(missing)}"
+            logger.error(msg)
+            raise ValueError(msg)
 
-        if missing_now:
-            message_now = f"Ошибка валидации: отсутствуют правила замены для сущностей: {', '.join(missing_now)}"
-            logger.error(message_now)
-            raise ValueError(message_now)
+        if self.use_language_model:
+            path = self.llm_settings.get("model_path", "")
+            if not path or not Path(path).exists():
+                msg = f"Некорректный путь до модели LLM: '{path}'"
+                logger.error(msg)
+                raise ValueError(msg)
+            for key in ("max_input_tokens", "chunk_overlap_tokens", "max_new_tokens"):
+                val = self.llm_settings.get(key)
+                if not isinstance(val, int) or val < 0:
+                    msg = f"LLM-настройка '{key}' должна быть неотрицательным целым, получено: {val}"
+                    logger.error(msg)
+                    raise ValueError(msg)
+            temp = self.llm_settings.get("temperature")
+            if not isinstance(temp, (int, float)) or not (0.0 <= temp <= 1.0):
+                msg = f"LLM-настройка 'temperature' должна быть от 0.0 до 1.0, получено: {temp}"
+                logger.error(msg)
+                raise ValueError(msg)
 
     def _current_timestamp(self) -> str:
         """
-        Текущее время в формате ISO.
+        Возвращает текущее время в формате ISO.
 
         Returns:
-            str: Дата и время.
+            str: Строка с датой и временем.
         """
         from datetime import datetime
         return datetime.now().isoformat()
 
-    def get_replacement_strategy(self, entity_type: str) -> Optional[str]:
+    def get_replacement_strategy(self, entity_type: str) -> Optional[Any]:
         """
         Получение метода замены по типу сущности.
 
@@ -180,7 +214,7 @@ class ConfigurationProfile:
             entity_type (str): Тип сущности.
 
         Returns:
-            Optional[str]: Метод замены (template, stars, remove).
+            Any: Правило замены (template, remove, stars и т.п.).
         """
         return self.replacement_rules.get(entity_type)
 
@@ -192,26 +226,26 @@ class ConfigurationProfile:
             entity_type (str): Тип сущности.
 
         Returns:
-            Optional[str]: Путь к словарю.
+            Optional[str]: Путь к словарю или None.
         """
         return self.dictionary_paths.get(entity_type)
 
     def get_custom_prompt(self, entity_type: str) -> Optional[str]:
         """
-        Получение кастомного промпта по типу сущности.
+        Получение кастомного промпта для LLM по типу сущности.
 
         Args:
             entity_type (str): Тип сущности.
 
         Returns:
-            Optional[str]: Промпт для LLM.
+            Optional[str]: Строка промпта или None.
         """
         return self.custom_entity_prompts.get(entity_type)
 
 
 class ConfigurationManager:
     """
-    Менеджер для управления несколькими конфигурационными профилями.
+    Менеджер для загрузки и управления несколькими конфигурационными профилями.
     """
 
     def __init__(self, config_file_path: Optional[str] = None):
@@ -222,30 +256,30 @@ class ConfigurationManager:
         if config_file_path:
             self.load_profiles(config_file_path)
 
-    def add_profile(self, profile_now: ConfigurationProfile) -> None:
+    def add_profile(self, profile: ConfigurationProfile) -> None:
         """
-        Добавление нового профиля.
+        Добавление нового профиля в менеджер.
 
         Args:
-            profile_now (ConfigurationProfile): Профиль для добавления.
+            profile (ConfigurationProfile): Инстанс профиля.
         """
-        profile_now.validate()
-        self.profiles[profile_now.profile_id] = profile_now
-        logger.info(f"Добавлен профиль: {profile_now.profile_id}")
+        profile.validate()
+        self.profiles[profile.profile_id] = profile
+        logger.info(f"Профиль '{profile.profile_id}' добавлен.")
 
     def get_profile(self, profile_id: Optional[str] = None) -> ConfigurationProfile:
         """
         Получение профиля по ID или по умолчанию.
 
         Args:
-            profile_id (str, optional): ID профиля.
+            profile_id (str, optional): Идентификатор профиля.
 
         Returns:
-            ConfigurationProfile: Найденный профиль.
+            ConfigurationProfile: Соответствующий профиль.
         """
         if profile_id is None:
             if self.default_profile_id is None:
-                raise ValueError("Не установлен профиль по умолчанию.")
+                raise ValueError("Не задан профиль по умолчанию.")
             profile_id = self.default_profile_id
 
         if profile_id not in self.profiles:
@@ -253,87 +287,87 @@ class ConfigurationManager:
 
         return self.profiles[profile_id]
 
-    def set_default_profile(self, profile_id_now: str) -> None:
+    def set_default_profile(self, profile_id: str) -> None:
         """
         Установка профиля по умолчанию.
 
         Args:
-            profile_id_now (str): ID профиля для установки по умолчанию.
+            profile_id (str): Идентификатор существующего профиля.
         """
-        if profile_id_now not in self.profiles:
-            raise KeyError(f"Профиль '{profile_id_now}' не найден для установки по умолчанию.")
-        self.default_profile_id = profile_id_now
-        logger.info(f"Установлен профиль по умолчанию: {profile_id_now}")
+        if profile_id not in self.profiles:
+            raise KeyError(f"Профиль '{profile_id}' не найден для установки.")
+        self.default_profile_id = profile_id
+        logger.info(f"Профиль по умолчанию установлен: '{profile_id}'.")
 
     def load_profiles(self, file_path_now: str) -> None:
         """
-        Загрузка профилей из JSON-файла.
+        Загрузка профилей из JSON-конфига.
 
         Args:
             file_path_now (str): Путь к файлу конфигурации.
         """
-        config_path = Path(file_path_now)
-        if not config_path.exists():
+        path = Path(file_path_now)
+        if not path.exists():
             logger.warning(f"Файл конфигурации не найден: {file_path_now}")
             return
 
-        with open(config_path, 'r', encoding='utf-8') as config_file_now:
-            data_now = json.load(config_file_now)
+        try:
+            raw_text = path.read_text(encoding='utf-8')
+        except Exception as exc:
+            logger.error(f"Не удалось прочитать файл конфигурации '{file_path_now}': {exc}")
+            return
 
-        for profile_data_now in data_now.get("profiles", []):
-            profile_now = ConfigurationProfile.from_dict(profile_data_now)
-            self.profiles[profile_now.profile_id] = profile_now
+        lines = raw_text.splitlines()
+        clean_lines = [ln for ln in lines if not ln.strip().startswith("//")]
+        clean_json = "\n".join(clean_lines)
 
-        self.default_profile_id = data_now.get("default_profile_id")
-        logger.info(f"Загружено профилей: {len(self.profiles)}")
+        try:
+            data = json.loads(clean_json)
+        except json.JSONDecodeError as exc:
+            logger.error(f"Ошибка разбора JSON в файле '{file_path_now}': {exc}")
+            return
 
-    def save_profiles(self, file_path_now: Optional[str] = None) -> None:
+        for profile_data in data.get("profiles", []):
+            profile = ConfigurationProfile.from_dict(profile_data)
+            self.profiles[profile.profile_id] = profile
+
+        self.default_profile_id = data.get("default_profile_id")
+        logger.info(f"Загружены профили: {list(self.profiles.keys())}")
+
+    def save_profiles(self, file_path: Optional[str] = None) -> None:
         """
         Сохранение всех профилей в JSON-файл.
 
         Args:
-            file_path_now (str, optional): Путь к файлу.
-        """
-        file_path_now = file_path_now or self.config_file_path
-        if not file_path_now:
-            raise ValueError("Не указан путь к файлу конфигурации.")
+            file_path (str, optional): Путь к файлу (если None — используется исходный)."""
+        path = Path(file_path or self.config_file_path or "")
+        if not path.parent.exists():
+            path.parent.mkdir(parents=True)
 
-        data_to_save = {
-            "profiles": [],
+        data = {
+            "profiles": [p.to_dict() for p in self.profiles.values()],
             "default_profile_id": self.default_profile_id
         }
+        with open(path, 'w', encoding='utf-8') as fp:
+            json.dump(data, fp, ensure_ascii=False, indent=4)
 
-        for profile_now in self.profiles.values():
-            profile_dict_now = profile_now.to_dict()
-            data_to_save["profiles"].append(profile_dict_now)
-
-        save_path = Path(file_path_now)
-        if not save_path.parent.exists():
-            save_path.parent.mkdir(parents=True)
-
-        with open(save_path, 'w', encoding='utf-8') as out_file_now:
-            json.dump(data_to_save, out_file_now, ensure_ascii=False, indent=4)
-
-        logger.info(f"Конфигурация сохранена в файл: {file_path_now}")
+        logger.info(f"Конфигурация сохранена: {path}")
 
     def get_profile_list(self) -> List[str]:
         """
-        Получить список ID всех загруженных профилей.
+        Список доступных профилей.
 
         Returns:
-            List[str]: Идентификаторы профилей.
+            List[str]: Список идентификаторов профилей.
         """
-        profile_ids_now = []
-        for profile_id_now in self.profiles.keys():
-            profile_ids_now.append(profile_id_now)
-        return profile_ids_now
+        return list(self.profiles.keys())
 
     def validate_all(self) -> None:
         """
-        Валидация всех профилей в менеджере.
+        Валидация всех загруженных профилей.
 
         Raises:
             ValueError: Если хоть один профиль невалиден.
         """
-        for profile_now in self.profiles.values():
-            profile_now.validate()
+        for profile in self.profiles.values():
+            profile.validate()

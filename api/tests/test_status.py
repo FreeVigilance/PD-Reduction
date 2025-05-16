@@ -1,5 +1,3 @@
-# api/tests/test_status.py
-
 import os
 import tempfile
 import json

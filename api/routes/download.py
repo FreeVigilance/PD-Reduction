@@ -21,7 +21,7 @@ def download_results(
         task_id (str): Идентификатор задачи.
 
     Returns:
-        FileResponse: Архив с redacted и report файлами.
+        FileResponse: Архив с оригиналами, редактированными файлами и отчётами
     """
     task = task_manager.get_task(task_id)
     if not task:
@@ -38,11 +38,23 @@ def download_results(
     archive_path = os.path.join(temp_dir, f"results_{task_id}.zip")
 
     with ZipFile(archive_path, "w") as archive:
-        for item in results:
-            for file_type in ("original_file", "redacted_file", "report_file"):
-                path = item.get(file_type)
-                if path and os.path.exists(path):
-                    archive.write(path, arcname=os.path.basename(path))
+        for idx, item in enumerate(results, start=1):
+            orig_path = item.get("original_file")
+            if orig_path and os.path.exists(orig_path):
+                ext = os.path.splitext(orig_path)[1] or ".txt"
+                arcname = f"original{idx}{ext}"
+                archive.write(orig_path, arcname=arcname)
+
+            red_path = item.get("redacted_file")
+            if red_path and os.path.exists(red_path):
+                ext = os.path.splitext(red_path)[1] or ".txt"
+                arcname = f"redacted{idx}{ext}"
+                archive.write(red_path, arcname=arcname)
+
+            rep_path = item.get("report_file")
+            if rep_path and os.path.exists(rep_path):
+                arcname = f"report{idx}.json"
+                archive.write(rep_path, arcname=arcname)
 
     return FileResponse(
         archive_path,

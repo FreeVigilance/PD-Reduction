@@ -1,12 +1,21 @@
 """
-Модуль для взаимодействия с языковой моделью (LLM) для выявления сущностей.
+Модуль обёртки над языковой моделью для контекстного анализа и поиска сущностей.
+
+Загрузка модели происходит ТОЛЬКО из локального пути, указанного в llm_settings
+JSON-профиля. Текст разбивается на токен-чанки в соответствии с настройками
+max_input_tokens и chunk_overlap_tokens.
 """
 
 import re
-from typing import List
+from typing import List, Dict, Any
+from pathlib import Path
+
+import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from ..config.configuration import ConfigurationProfile
+import spacy
+
 from ..entity_recognition.entity import Entity
+from ..config.configuration import ConfigurationProfile
 from ..utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -14,21 +23,118 @@ logger = get_logger(__name__)
 
 class LanguageModel:
     """
-    Класс для взаимодействия с языковой моделью (LLM) и извлечения сущностей из текста.
+    Обёртка над LLM (Vikhr-Gemma-2B-instruct) для поиска и разметки сущностей в тексте.
+
+    Методы:
+      - search_entities(text, profile)
+      - _initialize(llm_settings)
+      - _chunk_text(text, max_tokens, overlap)
+      - _generate_prompt(text, profile)
     """
 
-    def __init__(self, model_name: str = "Vikhrmodels/Vikhr-Gemma-2B-instruct"):
+    def __init__(self):
         """
-        Инициализация языковой модели и токенизатора.
+        Конструктор инициализирует атрибуты без загрузки модели.
+        spaCy загружается сразу.
+        """
+        self.tokenizer: AutoTokenizer = None
+        self.model: AutoModelForCausalLM = None
+        self.device: torch.device = None
+        self.initialized: bool = False
+        try:
+            self.nlp = spacy.load("ru_core_news_sm")
+        except OSError:
+            logger.warning("spaCy модель 'ru_core_news_sm' не найдена, попробуйте установить её через 'python -m spacy download ru_core_news_sm'")
+            self.nlp = None
+
+    def _initialize(self, llm_settings: Dict[str, Any]) -> None:
+        """
+        Локальная загрузка модели и токенизатора по настройкам.
 
         Args:
-            model_name (str): Имя модели HuggingFace.
+            llm_settings (dict): Словарь с настройками:
+                - model_path (str): локальный путь к модели
+                - device (str): 'cpu' или 'cuda'/'cuda:0'
+                - max_input_tokens (int)
+                - chunk_overlap_tokens (int)
+                - max_new_tokens (int)
+                - temperature (float)
         """
-        self.model_name = model_name
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(model_name)
+        model_path = llm_settings.get("model_path", "")
+        if not model_path:
+            msg = "LLM: не указан путь 'model_path' в настройках."
+            logger.error(msg)
+            raise ValueError(msg)
 
-    def _generate_prompt(self, text: str, profile: ConfigurationProfile) -> str:
+        path = Path(model_path)
+        if not path.exists():
+            msg = f"LLM: указанный путь до модели не найден: '{model_path}'"
+            logger.error(msg)
+            raise ValueError(msg)
+
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            model_path,
+            use_fast=True,
+            local_files_only=True
+        )
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            local_files_only=True
+        )
+
+        device_cfg = llm_settings.get("device", "cpu").lower()
+        if device_cfg.startswith("cuda") and torch.cuda.is_available():
+            gpu_device = device_cfg if device_cfg.startswith("cuda:") else "cuda:0"
+            self.device = torch.device(gpu_device)
+        else:
+            self.device = torch.device("cpu")
+        self.model.to(self.device)
+
+        logger.info(f"LLM загружена на устройство {self.device} из {model_path}")
+        self.initialized = True
+
+    def _chunk_text(
+        self,
+        text: str,
+        max_tokens: int,
+        overlap: int
+    ) -> List[str]:
+        """
+        Разбивка текста на фрагменты по токенам с указанным перекрытием.
+
+        Args:
+            text (str): Исходный текст.
+            max_tokens (int): Максимальное число токенов в чанке.
+            overlap (int): Число токенов пересечения между чанками.
+
+        Returns:
+            List[str]: Список текстовых чанков.
+        """
+        token_ids = self.tokenizer.encode(text, add_special_tokens=False)
+        total = len(token_ids)
+        if total <= max_tokens:
+            return [text]
+
+        chunks: List[str] = []
+        start = 0
+        while start < total:
+            end = start + max_tokens
+            slice_ids = token_ids[start:end]
+            chunk_text = self.tokenizer.decode(
+                slice_ids,
+                clean_up_tokenization_spaces=True
+            )
+            chunks.append(chunk_text)
+            if end >= total:
+                break
+            start = end - overlap
+        return chunks
+
+    def _generate_prompt(
+        self,
+        text: str,
+        profile: ConfigurationProfile
+    ) -> str:
         """
         Формирование промпта для генерации в формате chunk tagging.
 
@@ -44,140 +150,116 @@ class LanguageModel:
             "",
             "Типы тегов, которые нужно использовать:"
         ]
-
-        for entity_type in profile.entity_types:
-            description = profile.custom_entity_prompts.get(entity_type, f"Тип {entity_type}")
-            lines.append(f"- <{entity_type}>...</{entity_type}> — {description}")
-
+        for etype in profile.entity_types:
+            desc = profile.custom_entity_prompts.get(etype, f"Тип {etype}")
+            lines.append(f"- <{etype}>...</{etype}> — {desc}")
         lines += [
             "",
             "ВАЖНО:",
             "- Используй точные подстроки из текста, не изменяя форму слов.",
-            "- Не объединяй разные сущности.",
+            "- Не объединяй разные сущности. Одна сущность - одно или всего пару слов, не больше!",
             "- Не объясняй свои действия. Не добавляй ничего лишнего.",
             "- Одна и та же сущность может быть очень много раз. Найди все!",
             "",
-            "Текст для анализа (верни текст целиком, но с размеченными сущностями):",
+            "Текст для анализа:",
             "",
             text,
             "",
-            "Ответ:"
+            "Размеченный текст (верни текст для анализа целиком, но с размеченными сущностями):"
         ]
-
         return "\n".join(lines)
 
-    def _chunk_text(self, text: str, max_input_tokens: int, chunk_overlap_tokens: int) -> List[str]:
+    def search_entities(
+        self, text: str, profile: ConfigurationProfile
+    ) -> List[Entity]:
         """
-        Разбиение текста на чанки по количеству токенов с перекрытием.
+        Поиск сущностей в тексте с использованием LLM и chunk tagging.
+
+        Разбивает текст на чанки, формирует для каждого промпт через _generate_prompt,
+        генерирует размеченный текст, затем извлекает теги и возвращает объекты Entity.
+        При невозможности точного совпадения применяется spaCy для лемматизации и
+        нечеткий поиск через RapidFuzz.
 
         Args:
-            text (str): Полный текст.
-            max_input_tokens (int): Максимальное число токенов.
-            chunk_overlap_tokens (int): Количество перекрывающихся токенов между чанками.
+            text (str): Исходный текст для анализа.
+            profile (ConfigurationProfile): Конфигурационный профиль.
 
         Returns:
-            List[str]: Список чанков.
+            List[Entity]: Список найденных сущностей.
         """
-        input_ids = self.tokenizer.encode(text, add_special_tokens=False)
-        chunk_size = max_input_tokens - 400
-        chunks = []
-        start = 0
+        from rapidfuzz import fuzz
+        from .entity_recognizer import EntityRecognizer
 
-        while start < len(input_ids):
-            end = min(start + chunk_size, len(input_ids))
-            chunk_ids = input_ids[start:end]
-            chunk_text = self.tokenizer.decode(chunk_ids)
-            chunks.append(chunk_text)
-            start = end - chunk_overlap_tokens
-            if start <= 0:
-                start = end
+        if not profile.use_language_model:
+            return []
 
-        return chunks
+        if not self.initialized:
+            self._initialize(profile.llm_settings)
 
-    def search_entities(self, text: str, profile: ConfigurationProfile) -> List[Entity]:
-        """
-        Поиск сущностей в тексте с помощью языковой модели.
-
-        Args:
-            text (str): Текст для анализа.
-            profile (ConfigurationProfile): Профиль настроек.
-
-        Returns:
-            List[Entity]: Найденные сущности.
-        """
-        settings = profile.llm_settings or {}
-        max_input_tokens = settings.get("max_input_tokens", 4000)
-        chunk_overlap_tokens = settings.get("chunk_overlap_tokens", 200)
-        max_new_tokens = settings.get("max_new_tokens", 200)
-        temperature = settings.get("temperature", 0.8)
+        max_tok   = profile.llm_settings.get("max_input_tokens", 512)
+        overlap   = profile.llm_settings.get("chunk_overlap_tokens", 0)
+        max_new   = profile.llm_settings.get("max_new_tokens", 256)
+        temp      = profile.llm_settings.get("temperature", 0.5)
+        fuzzy_thr = profile.llm_settings.get("fuzzy_threshold", 85) 
 
         entities: List[Entity] = []
-        chunks = self._chunk_text(text, max_input_tokens, chunk_overlap_tokens)
 
-        for chunk in chunks:
-            try:
-                prompt = self._generate_prompt(chunk, profile)
-                print("\n[DEBUG PROMPT]")
-                print(prompt)
-                input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids
+        for chunk in self._chunk_text(text, max_tok, overlap):
+            prompt = self._generate_prompt(chunk, profile)
+            print(f"LLM prompt:\n{prompt}")
+            inputs = self.tokenizer(prompt, return_tensors="pt")
+            input_ids = inputs["input_ids"].to(self.device)
+            attn_mask = inputs.get("attention_mask")
+            if attn_mask is not None:
+                attn_mask = attn_mask.to(self.device)
 
-                output = self.model.generate(
-                    input_ids,
-                    max_new_tokens=max_new_tokens,
-                    temperature=temperature,
-                    top_p=1.0,
-                    top_k=5,
-                    do_sample=False,
-                    eos_token_id=self.tokenizer.eos_token_id
+            with torch.no_grad():
+                out_ids = self.model.generate(
+                    input_ids=input_ids,
+                    attention_mask=attn_mask,
+                    max_new_tokens=max_new,
+                    temperature=temp,
+                    do_sample=True
                 )
+            tagged = self.tokenizer.decode(out_ids[0], skip_special_tokens=True).strip()
+            print(f"LLM raw output:\n{tagged}")
 
-                result = self.tokenizer.decode(output[0], skip_special_tokens=True)
-                print("\n[DEBUG RAW OUTPUT]")
-                print(result)
-                extracted = self._extract_entities(result, chunk, profile)
-                entities.extend(extracted)
+            for et in profile.entity_types:
+                pattern = re.compile(f"<{et}>(.+?)</{et}>")
+                for m in pattern.finditer(tagged):
+                    ent_text = m.group(1)
+                    matched = False
 
-            except Exception as e:
-                logger.error(f"Ошибка генерации на чанке: {e}")
+                    for mm in re.finditer(re.escape(ent_text), text):
+                        entities.append(Entity(ent_text, et, *mm.span()))
+                        matched = True
 
-        return entities
+                    if not matched and self.nlp:
+                        ent_doc = self.nlp(ent_text)
+                        if ent_doc:
+                            lemma = ent_doc[0].lemma_
+                            for tok in self.nlp(text):
+                                if tok.lemma_ == lemma:
+                                    entities.append(
+                                        Entity(tok.text, et, tok.idx, tok.idx + len(tok.text))
+                                    )
+                                    matched = True
+                                    break
 
-    def _extract_entities(self, generated_text: str, original_text: str, profile: ConfigurationProfile) -> List[Entity]:
-        """
-        Извлечение сущностей из сгенерированного текста.
+                    if not matched:
+                        L0 = len(ent_text)
+                        delta = max(1, int(0.2 * L0))
+                        for L in (L0 - delta, L0 + delta):
+                            if L < 1:
+                                continue
+                            for i in range(0, len(text) - L + 1):
+                                candidate = text[i : i + L]
+                                score = fuzz.ratio(ent_text.lower(), candidate.lower())
+                                if score >= fuzzy_thr:
+                                    entities.append(Entity(candidate, et, i, i + len(candidate)))
+                                    matched = True
+                                    break
+                            if matched:
+                                break
 
-        Args:
-            generated_text (str): Ответ модели.
-            original_text (str): Оригинальный чанк.
-            profile (ConfigurationProfile): Профиль настроек.
-
-        Returns:
-            List[Entity]: Найденные сущности.
-        """
-        found = []
-        for entity_type in profile.entity_types:
-            open_tag = f"<{entity_type}>"
-            close_tag = f"</{entity_type}>"
-            start = 0
-
-            while True:
-                open_pos = generated_text.find(open_tag, start)
-                close_pos = generated_text.find(close_tag, open_pos)
-                if open_pos == -1 or close_pos == -1:
-                    break
-
-                entity_text = generated_text[open_pos + len(open_tag):close_pos].strip()
-                if not entity_text:
-                    start = close_pos + len(close_tag)
-                    continue
-
-                original_start = original_text.find(entity_text)
-                if original_start == -1:
-                    start = close_pos + len(close_tag)
-                    continue
-
-                original_end = original_start + len(entity_text)
-                found.append(Entity(entity_text, entity_type, original_start, original_end))
-                start = close_pos + len(close_tag)
-
-        return found
+        return EntityRecognizer()._deduplicate_entities(entities)

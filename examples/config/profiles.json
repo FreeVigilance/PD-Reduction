@@ -1,37 +1,42 @@
 {
     "profiles": [
-        {
-            "profile_id": "demo_profile",
-            "use_regex": true,
-            "use_dictionary": true,
-            "use_language_model": true,
-            "enabled_entity_types": ["PER", "LOC", "PHONE", "EMAIL", "ORG"],
-            "replacement_rules": {
-                "PER": {"type": "template", "template": "[PERSON]"},
-                "LOC": {"type": "template", "template": "[CITY]"},
-                "ORG": {"type": "template", "template": "[ORG]"},
-                "PHONE": {"type": "remove"},
-                "EMAIL": {"type": "stars"}
-            },
-            "custom_entity_prompts": {
-                "PER": "имена и фамилии людей, например Иван",
-                "LOC": "названия городов России, Например Омск",
-                "ORG": "названия компаний, например Яндекс"
-            },
-            "dictionary_paths": {
-                "cities": {
-                    "path": "dictionaries/russian_cities.txt",
-                    "entity_type": "LOC",
-                    "enabled": true
-                }
-            },
-            "llm_settings": {
-                "max_input_tokens": 4000,
-                "chunk_overlap_tokens": 200,
-                "max_new_tokens": 300,
-                "temperature": 0.7
-            }
+      {
+        "profile_id": "demo_profile",
+        "use_regex": true,
+        "use_dictionary": true,
+        "use_language_model": true,
+        "enabled_entity_types": ["PER", "LOC", "PHONE", "EMAIL", "ORG"],
+        "replacement_rules": {
+          "PER":   { "type": "template", "template": "[PERSON]" },
+          "LOC":   { "type": "template", "template": "[CITY]" },
+          "ORG":   { "type": "template", "template": "[ORG]" },
+          "PHONE": { "type": "remove" },
+          "EMAIL": { "type": "stars" }
+        },
+        "custom_entity_prompts": {
+          "PER":   "имена, фамилии и отчества людей, например «Александр Сергеевич»",
+          "LOC":   "названия городов России, например «Новосибирск»",
+          "ORG":   "названия компаний и организаций, например «Ростелеком»",
+          "PHONE": "номера телефонов в любых форматах, например «+7 900 000 00 00»",
+          "EMAIL": "адреса электронной почты, например «user@mail.ru»"
+        },
+        "dictionary_paths": {
+          "cities": {
+            "path": "dictionaries/russian_cities.txt",
+            "entity_type": "LOC",
+            "enabled": true
+          }
+        },
+        "llm_settings": {
+          "model_path": "/Users/mikekalabay/models/Vikhr-Gemma-2B-instruct",
+          "device": "cuda:0",
+          "max_input_tokens": 100,
+          "chunk_overlap_tokens": 20,
+          "max_new_tokens": 200,
+          "temperature": 0.2
         }
+      }
     ],
     "default_profile_id": "demo_profile"
 }
+  
